@@ -1,0 +1,6 @@
+import { ClientError } from './ClientError.js';
+export class IllegalStateError extends ClientError {
+    constructor(message) {
+        super(`Illegal state${message ? `: ${message}` : ''}`);
+    }
+}
