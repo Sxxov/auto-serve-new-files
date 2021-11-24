@@ -3,13 +3,15 @@ export class TaskSchedulerSingleton {
         this.scheduled.set(key, task);
     }
     static dispatchSync() {
-        for (const [, task] of this.scheduled) {
+        for (const [key, task] of this.scheduled) {
             void task();
+            this.scheduled.delete(key);
         }
     }
     static async dispatch() {
-        for (const [, task] of this.scheduled) {
+        for (const [key, task] of this.scheduled.entries()) {
             await task();
+            this.scheduled.delete(key);
         }
     }
     static async dispatchNextTick() {
@@ -21,9 +23,7 @@ export class TaskSchedulerSingleton {
                 clearTimeout(this.dispatchHandle);
             this.dispatchHandle = setTimeout(async () => {
                 this.dispatchHandle = null;
-                for (const [, task] of this.scheduled) {
-                    await task();
-                }
+                await this.dispatch();
                 resolve();
             }, ms);
         });
