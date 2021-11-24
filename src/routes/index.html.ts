@@ -1,33 +1,30 @@
 const main = async () => {
 	const params = new URLSearchParams(location.search);
 	const directory = String(params.get('directory'));
-	const filename = params.get('filename') ?? 'stuff';
+	const historyCount = Number(params.get('history')) || 3;
+	const extension = String(params.get('extension') ?? '').replace(/^./, '');
 	const events = new EventSource(`/api/v1/sse/watch?directory=${directory}`);
 
 	const button: HTMLButtonElement = document.querySelector('#directory')!;
-	let file:
-		| (WritableStream & {
-				write(data: BufferSource | Blob | string): Promise<void>;
-				seek(): Promise<void>;
-				truncate(): Promise<void>;
-		  })
-		| null = null;
 
 	button.addEventListener('click', async () => {
 		/* eslint-disable
 			@typescript-eslint/no-unsafe-call,
 			@typescript-eslint/no-unsafe-assignment,
-			@typescript-eslint/no-unsafe-member-access
+			@typescript-eslint/no-unsafe-member-access,
+			@typescript-eslint/no-unsafe-return
 		*/
 		const directoryHandle = await (window as any).showDirectoryPicker();
-		const fileHandle = await directoryHandle.getFileHandle(filename, {
-			create: true,
-		});
-		file = await fileHandle.createWritable();
+		const fileHandles = await Promise.all(
+			new Array(historyCount).fill(null).map((_, i) =>
+				directoryHandle.getFileHandle(`${i}.${extension}`, {
+					create: true,
+				}),
+			),
+		);
+		const fileContents = new Array(fileHandles.length).fill(new Blob());
 
-		/* eslint-enable */
-
-		document.title = `Watching: ${directory}`;
+		document.title = `👁️: ${directory}`;
 
 		button.disabled = true;
 		button.innerText = '✔️';
@@ -38,9 +35,30 @@ const main = async () => {
 				await fetch(`/api/v1/download?id=${id}`)
 			).blob();
 
-			file?.write(blob);
-			console.log(`Written file(${filename}) with data(${id})`);
+			fileContents.unshift(blob);
+			fileContents.splice(historyCount, Infinity);
+
+			for (let i = 0, l = fileContents.length; i < l; ++i) {
+				const fileHandle = fileHandles[i];
+				const fileContent: Blob = fileContents[i];
+				const file: WritableStream & {
+					write(data: BufferSource | Blob | string): Promise<void>;
+					seek(): Promise<void>;
+					truncate(): Promise<void>;
+				} = await fileHandle.createWritable();
+
+				await file.write(fileContent);
+				await file.close();
+
+				console.log(
+					`Written file(${i}.${extension}) with data(`,
+					fileContent,
+					')',
+				);
+			}
 		});
+
+		/* eslint-enable */
 	});
 };
 
